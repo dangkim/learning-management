@@ -13,6 +13,7 @@ client/.next/
 Thumbs.db
 
 .vscode/
+.vs/
 
 server/shared-local-instance.db
 server/dynamodb-local-metadata.json
