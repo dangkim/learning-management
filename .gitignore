@@ -18,3 +18,8 @@ Thumbs.db
 server/shared-local-instance.db
 server/dynamodb-local-metadata.json
 shared-local-instance.db
+dynamodb_local_latest/DynamoDBLocal_lib
+dynamodb_local_latest/DynamoDBLocal.jar
+dynamodb_local_latest/LICENSE.txt
+dynamodb_local_latest/README.txt
+dynamodb_local_latest/THIRD-PARTY-LICENSES.txt
