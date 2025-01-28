@@ -4,16 +4,79 @@ import { Request, Response } from "express";
 import Course from "../models/courseModel";
 import Transaction from "../models/transactionModel";
 import UserCourseProgress from "../models/userCourseProgressModel";
+import {
+  ApiError,
+  CheckoutPaymentIntent,
+  Client,
+  Environment,
+  LogLevel,
+  OrdersController,
+  PaymentsController,
+} from "@paypal/paypal-server-sdk";
+import bodyParser from "body-parser";
 
 dotenv.config();
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error(
-    "STRIPE_SECRET_KEY os required but was not found in env variables"
-  );
-}
+const { PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PORT = 8080 } = process.env;
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const client = new Client({
+  clientCredentialsAuthCredentials: {
+    oAuthClientId: PAYPAL_CLIENT_ID ?? "",
+    oAuthClientSecret: PAYPAL_CLIENT_SECRET ?? "",
+  },
+  timeout: 0,
+  environment: Environment.Sandbox,
+  logging: {
+    logLevel: LogLevel.Info,
+    logRequest: { logBody: true },
+    logResponse: { logHeaders: true },
+  },
+});
+
+const ordersController = new OrdersController(client);
+const paymentsController = new PaymentsController(client);
+
+const createOrder = async (amount: string) => {
+  const collect = {
+    body: {
+      intent: CheckoutPaymentIntent.Capture,
+      purchaseUnits: [
+        {
+          amount: {
+            currencyCode: "USD",
+            value: amount,
+          },
+        },
+      ],
+    },
+    prefer: "return=minimal",
+  };
+
+  try {
+    const { body, ...httpResponse } = await ordersController.ordersCreate(
+      collect
+    );
+    // Get more response info...
+    // const { statusCode, headers } = httpResponse;
+    return {
+      jsonResponse: JSON.parse(body.toString()),
+      httpStatusCode: httpResponse.statusCode,
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      // const { statusCode, headers } = error;
+      throw new Error(error.message);
+    }
+  }
+};
+
+// if (!process.env.STRIPE_SECRET_KEY) {
+//   throw new Error(
+//     "STRIPE_SECRET_KEY os required but was not found in env variables"
+//   );
+// }
+
+// const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export const listTransactions = async (
   req: Request,
@@ -35,7 +98,40 @@ export const listTransactions = async (
   }
 };
 
-export const createStripePaymentIntent = async (
+// export const createStripePaymentIntent = async (
+//   req: Request,
+//   res: Response
+// ): Promise<void> => {
+//   let { amount } = req.body;
+
+//   if (!amount || amount <= 0) {
+//     amount = 50;
+//   }
+
+//   try {
+//     const paymentIntent = await stripe.paymentIntents.create({
+//       amount,
+//       currency: "usd",
+//       automatic_payment_methods: {
+//         enabled: true,
+//         allow_redirects: "never",
+//       },
+//     });
+
+//     res.json({
+//       message: "",
+//       data: {
+//         clientSecret: paymentIntent.client_secret,
+//       },
+//     });
+//   } catch (error) {
+//     res
+//       .status(500)
+//       .json({ message: "Error creating stripe payment intent", error });
+//   }
+// };
+
+export const createPaypalOrderIntent = async (
   req: Request,
   res: Response
 ): Promise<void> => {
@@ -46,25 +142,66 @@ export const createStripePaymentIntent = async (
   }
 
   try {
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency: "usd",
-      automatic_payment_methods: {
-        enabled: true,
-        allow_redirects: "never",
-      },
-    });
-
-    res.json({
-      message: "",
-      data: {
-        clientSecret: paymentIntent.client_secret,
-      },
-    });
+    // use the cart information passed from the front-end to calculate the order amount detals
+    const { cart } = req.body;
+    const orderResult = await createOrder(amount.toFixed(2).toString());
+    if (orderResult) {
+      const { jsonResponse, httpStatusCode } = orderResult;
+      res.status(httpStatusCode).json(jsonResponse);
+    } else {
+      res.status(500).json({ error: "Failed to create order." });
+    }
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error creating stripe payment intent", error });
+    console.error("Failed to create order:", error);
+    res.status(500).json({ error: "Failed to create order." });
+  }
+};
+
+const captureOrder = async (orderID: string) => {
+  const collect = {
+    id: orderID,
+    prefer: "return=minimal",
+  };
+
+  try {
+    const { body, ...httpResponse } = await ordersController.ordersCapture(
+      collect
+    );
+    // Get more response info...
+    // const { statusCode, headers } = httpResponse;
+    return {
+      jsonResponse: JSON.parse(body.toString()),
+      httpStatusCode: httpResponse.statusCode,
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      // const { statusCode, headers } = error;
+      throw new Error(error.message);
+    }
+  }
+};
+
+export const capturePaypalOrder = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  let { orderID  } = req.params;
+
+  if (!orderID || orderID === "") {
+    res.status(500).json({ error: "no existing orderID" });
+  }
+
+  try {
+    const orderResult = await captureOrder(orderID);
+    if (orderResult) {
+      const { jsonResponse, httpStatusCode } = orderResult;
+      res.status(httpStatusCode).json(jsonResponse);
+    } else {
+      res.status(500).json({ error: "Failed to capture order." });
+    }
+  } catch (error) {
+    console.error("Failed to create order:", error);
+    res.status(500).json({ error: "Failed to capture order." });
   }
 };
 

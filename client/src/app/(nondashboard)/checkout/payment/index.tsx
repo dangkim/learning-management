@@ -1,66 +1,149 @@
-import React from "react";
-import StripeProvider from "./StripeProvider";
+import React, { useState, JSX } from "react";
 import {
-  PaymentElement,
-  useElements,
-  useStripe,
-} from "@stripe/react-stripe-js";
+  PayPalScriptProvider,
+  usePayPalCardFields,
+  PayPalCardFieldsProvider,
+  PayPalCardFieldsForm,
+  PayPalButtons,
+  usePayPalScriptReducer,
+} from "@paypal/react-paypal-js";
+import type {
+  CreateOrderActions,
+  OnApproveData,
+  OnApproveActions,
+  CardFieldsOnApproveData,
+} from "@paypal/paypal-js";
+import CoursePreview from "@/components/CoursePreview";
+import {
+  useCreatePaypalPaymentIntentMutation,
+  useCreateTransactionMutation,
+} from "@/state/api";
 import { useCheckoutNavigation } from "@/hooks/useCheckoutNavigation";
 import { useCurrentCourse } from "@/hooks/useCurrentCourse";
 import { useClerk, useUser } from "@clerk/nextjs";
-import CoursePreview from "@/components/CoursePreview";
-import { CreditCard } from "lucide-react";
+import { centsToDollars } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useCreateTransactionMutation } from "@/state/api";
-import { toast } from "sonner";
+
+interface BillingAddress {
+  addressLine1: string;
+  addressLine2: string;
+  adminArea1: string;
+  adminArea2: string;
+  countryCode: string;
+  postalCode: string;
+}
+
+interface SubmitPaymentProps {
+  isPaying: boolean;
+  setIsPaying: React.Dispatch<React.SetStateAction<boolean>>;
+  billingAddress: BillingAddress;
+}
 
 const PaymentPageContent = () => {
-  const stripe = useStripe();
-  const elements = useElements();
+  const [isPaying, setIsPaying] = useState(false);
   const [createTransaction] = useCreateTransactionMutation();
+  const [createPaypalPaymentIntent] = useCreatePaypalPaymentIntentMutation();
   const { navigateToStep } = useCheckoutNavigation();
   const { course, courseId } = useCurrentCourse();
   const { user } = useUser();
   const { signOut } = useClerk();
+  const [{ isPending }] = usePayPalScriptReducer();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const [billingAddress, setBillingAddress] = useState<BillingAddress>({
+    addressLine1: "",
+    addressLine2: "",
+    adminArea1: "",
+    adminArea2: "",
+    countryCode: "",
+    postalCode: "",
+  });
 
-    if (!stripe || !elements) {
-      toast.error("Stripe service is not available");
-      return;
+  function handleBillingAddressChange(
+    field: keyof BillingAddress,
+    value: string
+  ): void {
+    setBillingAddress((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }
+
+  async function createOrder(): Promise<string> {
+    try {
+      const result = await createPaypalPaymentIntent({
+        amount: course?.price ?? 9999999999999,
+      }).unwrap();
+      console.log("Order created:", result.orderDetail.id);
+      return result.orderDetail.id;
+    } catch (err) {
+      console.error(err);
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_LOCAL_URL
-      ? `http://${process.env.NEXT_PUBLIC_LOCAL_URL}`
-      : process.env.NEXT_PUBLIC_VERCEL_URL
-      ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-      : undefined;
+    return "";
+  }
 
-    const result = await stripe.confirmPayment({
-      elements,
-      confirmParams: {
-        return_url: `${baseUrl}/checkout?step=3&id=${courseId}`,
-      },
-      redirect: "if_required",
-    });
-
-    if (result.paymentIntent?.status === "succeeded") {
-      const transactionData: Partial<Transaction> = {
-        transactionId: result.paymentIntent.id,
-        userId: user?.id,
-        courseId: courseId,
-        paymentProvider: "stripe",
-        amount: course?.price || 0,
-      };
-
-      await createTransaction(transactionData), navigateToStep(3);
+  async function captureOrder(): Promise<void> {
+    try {
+      const result = await createPaypalPaymentIntent({
+        amount: course?.price ?? 9999999999999,
+      }).unwrap();
+      alert("Payment successful!");
+      console.log("Order captured:", result.orderDetail.id);
+    } catch (err) {
+      console.error(err);
     }
-  };
+  }
+
+  function onError(error: Record<string, unknown>): void {
+    console.error("Payment error:", error);
+  }
 
   const handleSignOutAndNavigate = async () => {
     await signOut();
     navigateToStep(1);
+  };
+
+  const SubmitPayment: React.FC<SubmitPaymentProps> = ({
+    isPaying,
+    setIsPaying,
+    billingAddress,
+  }) => {
+    const { cardFieldsForm } = usePayPalCardFields();
+
+    const handleClick = async (): Promise<void> => {
+      if (!cardFieldsForm) {
+        throw new Error(
+          "Unable to find any child components in the <PayPalCardFieldsProvider />"
+        );
+      }
+
+      const formState = await cardFieldsForm.getState();
+
+      if (!formState.isFormValid) {
+        alert("The payment form is invalid");
+        return;
+      }
+
+      setIsPaying(true);
+
+      try {
+        await cardFieldsForm.submit();
+      } catch (err) {
+        console.error("Error during submission:", err);
+        setIsPaying(false);
+      }
+    };
+
+    return (
+      <button
+        className={isPaying ? "btn" : "btn btn-primary"}
+        style={{ float: "right" }}
+        onClick={handleClick}
+        disabled={isPaying}
+      >
+        {isPaying ? <div className="spinner tiny" /> : "Pay"}
+      </button>
+    );
   };
 
   if (!course) return null;
@@ -75,32 +158,35 @@ const PaymentPageContent = () => {
 
         {/* Pyament Form */}
         <div className="payment__form-container">
-          <form
-            id="payment-form"
-            onSubmit={handleSubmit}
-            className="payment__form"
-          >
+          <>
+            {isPending ? <h2>Load Smart Payment Button...</h2> : null}
             <div className="payment__content">
-              <h1 className="payment__title">Checkout</h1>
-              <p className="payment__subtitle">
-                Fill out the payment details below to complete your purchase.
-              </p>
-
               <div className="payment__method">
-                <h3 className="payment__method-title">Payment Method</h3>
-
                 <div className="payment__card-container">
-                  <div className="payment__card-header">
-                    <CreditCard size={24} />
-                    <span>Credit/Debit Card</span>
-                  </div>
                   <div className="payment__card-element">
-                    <PaymentElement />
+                    <PayPalButtons
+                      createOrder={createOrder}
+                      onApprove={captureOrder}
+                      onError={onError}
+                    />
                   </div>
+
+                  <PayPalCardFieldsProvider
+                    createOrder={createOrder}
+                    onApprove={captureOrder}
+                    onError={onError}
+                  >
+                    <PayPalCardFieldsForm />
+                    <SubmitPayment
+                      isPaying={isPaying}
+                      setIsPaying={setIsPaying}
+                      billingAddress={billingAddress}
+                    />
+                  </PayPalCardFieldsProvider>
                 </div>
               </div>
             </div>
-          </form>
+          </>
         </div>
       </div>
 
@@ -114,24 +200,22 @@ const PaymentPageContent = () => {
         >
           Switch Account
         </Button>
-
-        <Button
-          form="payment-form"
-          type="submit"
-          className="payment__submit"
-          disabled={!stripe || !elements}
-        >
-          Pay with Credit Card
-        </Button>
       </div>
     </div>
   );
 };
 
-const PaymentPage = () => (
-  <StripeProvider>
-    <PaymentPageContent />
-  </StripeProvider>
-);
+const PaymentPage = () => {
+  return (
+    <PayPalScriptProvider
+      options={{
+        clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "",
+        components: "card-fields,buttons",
+      }}
+    >
+      <PaymentPageContent />
+    </PayPalScriptProvider>
+  );
+};
 
 export default PaymentPage;

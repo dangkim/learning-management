@@ -57,7 +57,7 @@ declare global {
     transactionId: string;
     dateTime: string;
     courseId: string;
-    paymentProvider: "stripe";
+    paymentProvider: "stripe" | "paypal";
     paymentMethodId?: string;
     amount: number; // Stored in cents
     savePaymentMethod?: boolean;
@@ -205,6 +205,64 @@ declare global {
     courseCategory: string;
     coursePrice: string;
     courseStatus: boolean;
+  }
+
+  interface PaymentSourceCard {
+    name: string;
+    last_digits: string;
+    brand: string;
+    available_networks: string[];
+    type: string;
+  }
+
+  interface PaymentSourcePaypal {
+    email_address: string;
+    account_id: string;
+    account_status: string;
+    name: {
+      given_name: string;
+      surname: string;
+    };
+    phone_type: string;
+  }
+
+  interface PaymentSourceBancontact {
+    name: string;
+    country_code: string;
+    bic: string;
+    iban_last_chars: string;
+    card_last_digits: string;
+  }
+
+  interface PaymentSourceBlik {
+    name: string;
+    country_code: string;
+    email: string;
+    one_click: {
+      consumer_reference: string;
+    };
+  }
+
+  interface PaymentSourceEps {
+    name: string;
+    country_code: string;
+    bic: string;
+  }
+
+  interface PaymentSource {
+    card?: PaymentSourceCard;
+    paypal?: PaymentSourcePaypal;
+    bancontact?: PaymentSourceBancontact;
+    blik?: PaymentSourceBlik;
+    eps?: PaymentSourceEps;
+  }
+
+  interface OrderPaypal {
+    create_time: string;
+    update_time: string;
+    id: string;
+    payment_source: PaymentSource;
+    intent: string;
   }
 }
 

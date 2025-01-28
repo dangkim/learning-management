@@ -164,6 +164,26 @@ export const api = createApi({
         body: { amount },
       }),
     }),
+    createPaypalPaymentIntent: build.mutation<
+      { orderDetail: OrderPaypal },
+      { amount: number }
+    >({
+      query: ({ amount }) => ({
+        url: `/transactions/paypal/payment-intent`,
+        method: "POST",
+        body: { amount },
+      }),
+    }),
+    capturePaypalPaymentIntent: build.mutation<
+      { orderDetail: OrderPaypal },
+      { orderID: string }
+    >({
+      query: ({ orderID }) => ({
+        url: `/transactions/paypal/capturePaypalOrder`,
+        method: "POST",
+        body: { orderID },
+      }),
+    }),
     createTransaction: build.mutation<Transaction, Partial<Transaction>>({
       query: (transaction) => ({
         url: "transactions",
@@ -244,6 +264,7 @@ export const {
   useGetTransactionsQuery,
   useCreateTransactionMutation,
   useCreateStripePaymentIntentMutation,
+  useCreatePaypalPaymentIntentMutation,
   useGetUserEnrolledCoursesQuery,
   useGetUserCourseProgressQuery,
   useUpdateUserCourseProgressMutation,

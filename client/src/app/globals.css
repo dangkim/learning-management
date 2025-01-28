@@ -143,7 +143,7 @@ input[type="color"] {
 }
 
 .search__selected-course {
-  @apply basis-2/5 min-w-[350px] h-fit border-2 border-primary-600 bg-customgreys-secondarybg overflow-hidden rounded-lg;
+  @apply basis-2/5 min-w-[280px] h-fit border-2 border-primary-600 bg-customgreys-secondarybg overflow-hidden rounded-lg;
 }
 
 /* Selected Course Component */
@@ -450,7 +450,7 @@ input[type="color"] {
 }
 
 .payment__card-element {
-  @apply px-4 py-6;
+  @apply px-2 py-6;
 }
 
 .payment__actions {
